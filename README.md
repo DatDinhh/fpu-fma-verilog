@@ -43,14 +43,14 @@
 3. Compile with -g2012 to enable SystemVerilog features:
     iverilog -g2012 -o fpu_fma.vvp fpu_fma_pipeline.v fpu_fma_tb.v
 
-##Future Improvements
+## Future Improvements
 
 Full IEEE-754 compliance: Handle NaN, ±Infinity, subnormals, and different rounding modes
 Exception flags: Overflow, underflow, inexact, invalid operations
 Parameterize: Support half (16-bit), double (64-bit), or bfloat16
 Deeper pipeline: Increase maximum clock frequency and throughput
 
-##Acknowledgments
+## Acknowledgments
 
 Inspired by standard FPU designs and various academic references on IEEE 754.
 Uses $realtobits/$bitstoreal for quick testbench conversions (supported by many simulators).
