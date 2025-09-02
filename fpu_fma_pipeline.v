@@ -14,9 +14,7 @@ module fpu_fma_pipeline(
     output wire [31:0]  F_out
 );
 
-    //------------------------------------------------
     // Stage 1: Decode
-    //------------------------------------------------
     reg [31:0] A_s1, B_s1, C_s1;
     reg        valid_s1;
 
@@ -61,20 +59,16 @@ module fpu_fma_pipeline(
         end
     end
 
-    //------------------------------------------------
     // Stage 2: Multiply (mantissa) & partial exponent
-    //------------------------------------------------
-    // In IEEE754 normal form, we have an implicit “1.” leading bit if exponent != 0.
-    // We’ll add that here. If exponent=0, it’s either denormal or zero – simplified handling here.
 
     reg        valid_s2;
     reg        signAB_s2; 
-    reg [15:0] expAB_s2;   // bigger bit width for exponent sum
-    reg [47:0] prod_s2;    // 24-bit * 24-bit = 48 bits (approx)
+    reg [15:0] expAB_s2;   
+    reg [47:0] prod_s2;    
 
     reg        signC_s2;
     reg [7:0]  expC_s2;
-    reg [23:0] mantC_s2;   // 1 extra bit for the “1.” if normalized
+    reg [23:0] mantC_s2;   
 
     wire [23:0] mantA_s1 = (expA_s1 == 0) ? {1'b0, fracA_s1} : {1'b1, fracA_s1};
     wire [23:0] mantB_s1 = (expB_s1 == 0) ? {1'b0, fracB_s1} : {1'b1, fracB_s1};
@@ -91,29 +85,19 @@ module fpu_fma_pipeline(
         end else begin
             valid_s2   <= valid_s1;
 
-            // Multiply sign => XOR
             signAB_s2  <= signA_s1 ^ signB_s1;
 
-            // Add exponents (minus bias=127, simplified here)
-            // We'll do: expSum = (expA + expB) - 127
-            // Keep bigger bits to avoid overflow
             expAB_s2   <= (expA_s1 + expB_s1) - 127;
 
-            // Multiply mantissa
             prod_s2    <= mantA_s1 * mantB_s1;
 
-            // Pass along C info
             signC_s2   <= signC_s1;
             expC_s2    <= expC_s1;
             mantC_s2   <= (expC_s1 == 0) ? {1'b0, fracC_s1} : {1'b1, fracC_s1};
         end
     end
 
-    //------------------------------------------------
     // Stage 3: Normalize partial product & align C
-    //------------------------------------------------
-    // We have a 48-bit product; we might need to shift it to keep an implied leading 1.
-    // Also align the exponent if the product is large or small.
 
     reg        valid_s3;
     reg        signAB_s3;
@@ -124,16 +108,12 @@ module fpu_fma_pipeline(
     reg [7:0]  expC_s3;
     reg [23:0] mantC_s3;
 
-    // For simplicity: assume we might shift by 1 bit if the product’s leading bit is beyond 47
-    // or if it’s less. Real FP designs do a more thorough check.
-
     wire [47:0] normProd_s2;
     reg  [15:0] normExp_s2;
-    wire        leadingBit = prod_s2[47]; // if the leading bit is set, we have an overflow
+    wire        leadingBit = prod_s2[47]; 
 
     always @* begin
         if(leadingBit == 1'b1) begin
-            // shift right by 1
             normProd_s2 = prod_s2 >> 1;
             normExp_s2  = expAB_s2 + 1;
         end else begin
@@ -142,7 +122,6 @@ module fpu_fma_pipeline(
         end
     end
 
-    // Pipeline it
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
             valid_s3   <= 1'b0;
@@ -164,24 +143,17 @@ module fpu_fma_pipeline(
         end
     end
 
-    //------------------------------------------------
     // Stage 4: Add product and C
-    //------------------------------------------------
-    // We must compare expAB_s3 vs expC_s3 to align them if needed.
-    // For simplicity, assume expAB_s3 is in the range of single-precision after stage 3.
 
     reg        valid_s4;
     reg [31:0] addResult_s4; 
     reg        sign_s4;
 
-    // Convert product to a 24-bit mant (with leftover bits for fraction)
     wire [7:0] finalExpAB_s3 = (expAB_s3 > 255) ? 8'hFF : 
                                (expAB_s3 < 0)   ? 8'h00 : expAB_s3[7:0];
 
-    // "mantProd" is top 24 bits of the 48-bit product, for the integer portion
-    wire [23:0] mantProd_s3 = prod_s3[46:23]; // ignoring lower fraction bits for simplicity
+    wire [23:0] mantProd_s3 = prod_s3[46:23]; 
 
-    // Align the smaller exponent’s mantissa
     reg [7:0]  biggerExp;
     reg [7:0]  smallerExp;
     reg [23:0] biggerMant;
@@ -209,10 +181,8 @@ module fpu_fma_pipeline(
     // Exponent difference
     wire [7:0] expDiff = biggerExp - smallerExp;
 
-    // Shift the smaller mantissa
     wire [23:0] alignedSmaller = (expDiff >= 24) ? 24'd0 : (smallerMant >> expDiff);
 
-    // Add or subtract
     wire signAddDiff = biggerSign ^ smallerSign;
     reg  [24:0] mantSum;
     always @* begin
@@ -226,29 +196,24 @@ module fpu_fma_pipeline(
                 sign_s4 = ~biggerSign;
             end
         end else begin
-            // same sign => addition
             mantSum = biggerMant + alignedSmaller;
             sign_s4 = biggerSign;
         end
     end
 
-    // Pipeline stage
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
             valid_s4     <= 1'b0;
             addResult_s4 <= 32'h0;
         end else begin
             valid_s4 <= valid_s3;
-            // Combine sign_s4, biggerExp, mantSum => float
             addResult_s4 <= { sign_s4,
                               biggerExp,
                               mantSum[22:0] };
         end
     end
 
-    //------------------------------------------------
     // Stage 5: Final Normalize, Round
-    //------------------------------------------------
     reg        valid_s5;
     reg [31:0] fOut_s5;
 
@@ -258,8 +223,6 @@ module fpu_fma_pipeline(
             fOut_s5  <= 32'b0;
         end else begin
             valid_s5 <= valid_s4;
-            // For simplicity, assume no further normalization needed
-            // In real design, you might shift mantSum if it overflowed or if it was 0
             fOut_s5  <= addResult_s4;
         end
     end
