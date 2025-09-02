@@ -33,8 +33,6 @@ module fpu_fma_tb;
         input real val;
         reg [31:0] bits;
         begin
-            // This is a simulation convenience: $realtobits is ModelSim/VCS extension
-            // In pure Icarus, we might do a cast with a union or just provide precomputed hex
             bits = $realtobits(val);
             float2bits = bits;
         end
